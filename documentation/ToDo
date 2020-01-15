@@ -1,0 +1,7 @@
+ToDo list
+------------------------------------
+
+1. Write directory interface;
+2. Use flags __f_req_user_change & __f_req_group_change to enable/disable user/group privillege retain.
+
+------------------------------------

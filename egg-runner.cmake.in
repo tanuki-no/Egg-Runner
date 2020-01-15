@@ -1,0 +1,18 @@
+# Phoenix::Egg runner library configuration
+
+IF ( NOT EggRunnerIncludePath OR
+     NOT EggRunnerLibraryPath OR
+     NOT EggRunnerLibraryName )
+
+  SET (	EggRunnerIncludePath	"@CMAKE_INSTALL_FULL_INCLUDEDIR@"
+        CACHE		PATH "Egg (Linux SDK) runner includes"	)
+
+  SET (	EggRunnerLibraryPath	"@CMAKE_INSTALL_FULL_LIBDIR@"
+        CACHE		PATH "Egg (Linux SDK) runner library"	)
+
+  SET (	EggRunnerLibraryName	"@LibraryName@"
+        CACHE		PATH "Egg (Linux SDK) runner library name"	)
+
+ENDIF ()
+
+# End of file
