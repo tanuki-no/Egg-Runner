@@ -6,6 +6,7 @@ INCLUDE_DIRECTORIES (
   ${CMAKE_BINARY_DIR}/include
   ${CMAKE_INSTALL_FULL_INCLUDEDIR}
   ${EggVariableIncludePath}
+  ${CAP_INCLUDE_DIRS}
   )
 
 # Sources
