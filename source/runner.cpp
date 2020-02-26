@@ -58,23 +58,6 @@ void process(
 
 };
 
-EGG_PRIVATE void
-dump(
-	egg::registry::value::const_iterator start,
-	egg::registry::value::const_iterator end,
-	int level)
-{
-	std::string indent(level, ' ');
-
-	for (auto i  = start; i != end; ++i)
-	{
-		::syslog(LOG_DEBUG, "%sd[%s] = %s", indent.c_str(), i->first.to_string().c_str(), i->second.to_string().c_str());
-
-		if (i->second.size())
-			dump((*i).second.begin(),(*i).second.end(),level + 1);
-	}
-}
-
 } // End of sys::helper namespace
 
 // Process itself
@@ -82,6 +65,7 @@ process::process(
     const std::string& the_name)
   : _environment(egg::environment::instance()),
     _signal(egg::signal::controller::instance()),
+    __f_trace(0),
     __f_is_daemon(0),
     __f_req_user_change(0),
     __f_req_group_change(0),
@@ -125,7 +109,10 @@ process::execute()
             LOG_PID,
             LOG_DAEMON);
 
-    ::syslog(LOG_INFO, "Starting");
+    if (__f_trace)
+    {
+      ::syslog(LOG_INFO, "Start logging ...");
+    }
   }
 
   // Check if service is up
@@ -136,8 +123,10 @@ process::execute()
   {
     std::string __path = _pid_path.substr(0, _pid_path.find_last_of('/'));
 
-    if (__f_req_syslog)
+    if (__f_req_syslog && __f_trace)
+    {
       ::syslog(LOG_DEBUG, "Create directory \"%s\" if required ...", __path.c_str());
+    }
 
     credentials::create_directory(__path, _uid, _gid);
   }
@@ -162,15 +151,14 @@ process::execute()
 
     __detach_terminal();
 
-    if (__f_req_syslog)
+    if (__f_req_syslog && __f_trace)
+    {
       ::syslog(LOG_INFO, "Starting new session ...");
+    }
 
     if (::setsid() < 0)
     {
-      throw std::system_error(
-          errno,
-          std::system_category(),
-          "setsid() failed");
+      throw std::system_error(errno, std::system_category(), "setsid() failed");
     }
   }
 
@@ -194,21 +182,27 @@ process::execute()
   after();
 
   // Complete
-  if (__f_req_syslog)
+  if (__f_req_syslog && __f_trace)
+  {
     ::syslog(LOG_INFO, "Initialization complete!");
+  }
 
   // Done
   __f_switch_complete = 1;
 
   // Main cycle
-  if (__f_req_syslog)
+  if (__f_req_syslog && __f_trace)
+  {
     ::syslog(LOG_INFO, "Starting main cycle ...");
+  }
 
   // Main cycle
   run();
 
-  if (__f_req_syslog)
+  if (__f_req_syslog && __f_trace)
+  {
     ::syslog(LOG_INFO, "Main cycle complete!");
+  }
 
   // Remove pid
   __remove_pid();
@@ -220,41 +214,52 @@ process::enable(
     process::property	the_property)
   noexcept
 {
-	switch (the_property)
-	{
-	case property::daemon:
-		__f_is_daemon = 1;
-		break;
-	case property::user:
-		__f_req_user_change = 1;
-		break;
-	case property::group:
-		__f_req_group_change = 1;
-		break;
-	case property::working_directory:
-		__f_req_cwd_change = 1;
-		break;
-	case property::pid_file:
-		__f_req_pid_file = 1;
-		break;
-	case property::syslog:
-	{
-		__f_req_syslog = 1;
+  if (property::trace == the_property)
+  {
+    __f_trace = 1;
+  }
+  else if (property::daemon == the_property)
+  {
+    __f_is_daemon = 1;
+  }
+  else if(property::user == the_property)
+  {
+    __f_req_user_change = 1;
+  }
+  else if(property::group == the_property)
+  {
+    __f_req_group_change = 1;
+  }
+  else if(property::working_directory == the_property)
+  {
+    __f_req_cwd_change = 1;
+  }
+  else if(property::pid_file == the_property)
+  {
+    __f_req_pid_file = 1;
+  }
+  else if(property::syslog == the_property)
+  {
+    __f_req_syslog = 1;
 
-		// Open syslog
-		if (__f_req_syslog)
-		{
-			::openlog( _syslog_label.c_str(), LOG_CONS | LOG_NDELAY | LOG_PERROR | LOG_PID, LOG_DAEMON);
-			::syslog(LOG_INFO, "Starting");
-		}
-	} break;
-	case property::cgroup:
-		__f_req_cgroup = 1;
-		break;
-	default:
-		// Do nothing
-		break;
-	}
+    // Open syslog
+    if (__f_req_syslog)
+    {
+      ::openlog(
+	_syslog_label.c_str(),
+	LOG_CONS | LOG_NDELAY | LOG_PERROR | LOG_PID,
+	LOG_DAEMON);
+
+      if (__f_trace)
+      {
+	::syslog(LOG_INFO, "Start logging ...");
+      }
+    }
+  }
+  else if(property::cgroup == the_property)
+  {
+    __f_req_cgroup = 1;
+  }
 }
 
 void
@@ -262,35 +267,39 @@ process::disable(
     process::property	the_property)
   noexcept
 {
-	switch (the_property)
-	{
-	case property::daemon:
-		__f_is_daemon = 0;
-		break;
-	case property::user:
-		__f_req_user_change = 0;
-		break;
-	case property::group:
-		__f_req_group_change = 0;
-		break;
-	case property::working_directory:
-		__f_req_cwd_change = 0;
-		break;
-	case property::pid_file:
-		__f_req_pid_file = 0;
-		break;
-	case property::syslog:
-	{
-		__f_req_syslog = 0;
-		::closelog();
-	} break;
-	case property::cgroup:
-		__f_req_cgroup = 0;
-		break;
-	default:
-		// Do nothing
-		break;
-	}
+  if (property::trace == the_property)
+  {
+    __f_trace = 0;
+  }
+  else if (property::daemon == the_property)
+  {
+    __f_is_daemon = 0;
+  }
+  else if (property::user == the_property)
+  {
+    __f_req_user_change = 0;
+  }
+  else if (property::group == the_property)
+  {
+    __f_req_group_change = 0;
+  }
+  else if (property::working_directory == the_property)
+  {
+    __f_req_cwd_change = 0;
+  }
+  else if (property::pid_file == the_property)
+  {
+    __f_req_pid_file = 0;
+  }
+  else if (property::syslog == the_property)
+  {
+    __f_req_syslog = 0;
+    ::closelog();
+  }
+  else if (property::cgroup == the_property)
+  {
+    __f_req_cgroup = 0;
+  }
 }
 
 bool
@@ -298,37 +307,40 @@ process::status(
     process::property	the_property)
   const noexcept
 {
-  bool result = false;
-
-  switch (the_property)
+  if (property::trace == the_property)
   {
-    case property::daemon:
-      result = __f_is_daemon ? true : false;
-      break;
-    case property::user:
-      result = __f_req_user_change ? true : false;
-      break;
-    case property::group:
-      result = __f_req_group_change ? true : false;
-      break;
-    case property::working_directory:
-      result = __f_req_cwd_change ? true : false;
-      break;
-    case property::pid_file:
-      result = __f_req_pid_file ? true : false;
-      break;
-    case property::syslog:
-      result = __f_req_syslog ? true : false;
-      break;
-    case property::cgroup:
-      result = __f_req_cgroup ? true : false;
-      break;
-    default:
-      // Do nothing
-      break;
+    return (__f_trace ? true : false);
+  }
+  else if (property::daemon == the_property)
+  {
+    return (__f_is_daemon ? true : false);
+  }
+  else if (property::user == the_property)
+  {
+    return (__f_req_user_change ? true : false);
+  }
+  else if (property::group == the_property)
+  {
+    return (__f_req_group_change ? true : false);
+  }
+  else if (property::working_directory == the_property)
+  {
+    return (__f_req_cwd_change ? true : false);
+  }
+  else if (property::pid_file == the_property)
+  {
+    return (__f_req_pid_file ? true : false);
+  }
+  else if (property::syslog == the_property)
+  {
+    return (__f_req_syslog ? true : false);
+  }
+  else if (property::cgroup == the_property)
+  {
+    return (__f_req_cgroup ? true : false);
   }
 
-  return result;
+  return false;
 }
 
 void
@@ -336,75 +348,61 @@ process::set(
     process::property	the_property,
     const egg::variable& the_value)
 {
-  switch (the_property)
+  if (property::description == the_property)
   {
-    case property::description:
-      {
-	_description = the_value.as_string();
+    _description = the_value.as_string();
 
-	if (__f_req_syslog)
-	  ::syslog(
-		LOG_DEBUG,
-		"Set name to \"%s\"",
-		_description.c_str());
-      }
-      break;
-    case property::user:
-      {
-        _uid  = credentials::name_to_user_id(the_value.as_string());
-        _user = the_value.as_string();
+    if (__f_req_syslog && __f_trace)
+    {
+      ::syslog(LOG_DEBUG, "Set name to \"%s\"", _description.c_str());
+    }
+  }
+  else if (property::user == the_property)
+  {
+    _uid  = credentials::name_to_user_id(the_value.as_string());
+    _user = the_value.as_string();
 
-	if (__f_req_syslog)
-	  ::syslog(
-	  	LOG_DEBUG,
-		"Set user name to \"%s\" (id: %ud)",
-		_user.c_str(),
-		_uid);
-      }
-      break;
-    case property::group:
-      {
-        _gid   = credentials::name_to_group_id(the_value.as_string());
-        _group = the_value.as_string();
+    if (__f_req_syslog && __f_trace)
+    {
+      ::syslog(LOG_DEBUG, "Set user name to \"%s\" (id: %u)", _user.c_str(), _uid);
+    }
+  }
+  else if (property::group == the_property)
+  {
+    _gid   = credentials::name_to_group_id(the_value.as_string());
+    _group = the_value.as_string();
 
-	if (__f_req_syslog)
-	  ::syslog(
-		LOG_DEBUG,
-		"Set group name to \"%s\" (id: %ud)",
-		_group.c_str(),
-		_gid);
-      }
-      break;
-    case property::working_directory:
-      {
-	_working_directory = the_value.as_string();
+    if (__f_req_syslog && __f_trace)
+    {
+      ::syslog(LOG_DEBUG, "Set group name to \"%s\" (id: %u)", _group.c_str(), _gid);
+    }
+  }
+  else if (property::working_directory == the_property)
+  {
+    _working_directory = the_value.as_string();
 
-	if (__f_req_syslog)
-	  ::syslog(
-		LOG_DEBUG,
-        "Set working directory to \"%s\"",
-		_working_directory.c_str());
-      }
-      break;
-    case property::pid_file:
-      {
-	_pid_path = the_value.as_string();
+    if (__f_req_syslog && __f_trace)
+    {
+      ::syslog(LOG_DEBUG, "Set working directory to \"%s\"", _working_directory.c_str());
+    }
+  }
+  else if (property::pid_file == the_property)
+    {
+      _pid_path = the_value.as_string();
 
-	if (__f_req_syslog)
-	  ::syslog(
-		LOG_DEBUG,
-		"Set PID file name to \"%s\"",
-		_pid_path.c_str());
-      }
-      break;
-    case property::syslog:
+      if (__f_req_syslog && __f_trace)
       {
-	_syslog_label = the_value.as_string();
+	::syslog(LOG_DEBUG, "Set PID file name to \"%s\"", _pid_path.c_str());
       }
-      break;
-    default:
-      // Do nothing
-      break;
+    }
+  else if (property::syslog == the_property)
+  {
+    _syslog_label = the_value.as_string();
+
+    if (__f_req_syslog && __f_trace)
+    {
+      ::syslog(LOG_DEBUG, "Change label to \"%s\"", _syslog_label.c_str());
+    }
   }
 }
 
@@ -413,19 +411,33 @@ process::get(
     process::property the_property) const
 {
   if (property::description == the_property)
+  {
     return _description;
+  }
   else if (property::user == the_property)
+  {
     return _user;
+  }
   else if (property::group == the_property)
+  {
     return _group;
+  }
   else if (property::working_directory == the_property)
+  {
     return _working_directory;
+  }
   else if (property::pid_file == the_property)
+  {
     return _pid_path;
+  }
   else if (property::syslog == the_property)
+  {
     return _syslog_label;
+  }
   else
+  {
     return std::move(egg::variable());
+  }
 }
 
 bool
@@ -455,11 +467,13 @@ process::__is_service_up()
       {
         std::error_code ec(errno, std::system_category());
 
-        if (__f_req_syslog)
+        if (__f_req_syslog && __f_trace)
+	{
           ::syslog(
             LOG_ERR,
             "read(%d, %s, %ld): %s, %d",
             fd, txt, Size, ec.message().c_str(), ec.value());
+	}
 
         throw std::system_error(ec, "Pid file " );
       }
@@ -467,8 +481,10 @@ process::__is_service_up()
       // Check if process exists
       pid_t __pid = std::strtol(txt, nullptr, 10);
 
-      if (__f_req_syslog)
+      if (__f_req_syslog && __f_trace)
+      {
         ::syslog(LOG_DEBUG, "Querying PID %d ...", __pid);
+      }
 
       if (kill(__pid, 0))
       {
@@ -492,7 +508,9 @@ process::__is_service_up()
         msg.append(" exists");
 
         if (__f_req_syslog)
+	{
           ::syslog(LOG_ALERT, "%s", msg.c_str());
+	}
 
         throw std::system_error(
           std::make_error_code(std::errc::device_or_resource_busy), msg);
@@ -501,11 +519,13 @@ process::__is_service_up()
   }
 
   // Process check based on non pid
-  if (__f_req_syslog)
+  if (__f_req_syslog && __f_trace)
+  {
     ::syslog(
         LOG_DEBUG,
         "Check if the process with the name %s does exist",
         _name.c_str());
+  }
 
   pid_t __existsing_process = exists(_name);
   if (__existsing_process != -1)
@@ -515,7 +535,9 @@ process::__is_service_up()
     msg.append(" exists. Please, stop it first");
 
     if (__f_req_syslog)
+    {
       ::syslog(LOG_ALERT, "%s", msg.c_str());
+    }
 
     throw std::system_error(
       std::make_error_code(std::errc::device_or_resource_busy),
@@ -527,46 +549,60 @@ process::__is_service_up()
 void
 process::__set_capabilities() noexcept
 {
-  if (__f_req_syslog)
+  if (__f_req_syslog && __f_trace)
+  {
     ::syslog(LOG_DEBUG, "Seting up capabilities ...");
+  }
 
   try
   {
     if (capng_get_caps_process())
+    {
       throw std::system_error(
-          std::make_error_code(std::errc::invalid_argument),
-          "Unable to get capabilities");
+	std::make_error_code(std::errc::invalid_argument),
+	"Unable to get capabilities");
+    }
 
     capng_clear(CAPNG_SELECT_BOTH);
 
     if (capng_updatev(CAPNG_ADD, CAPNG_EFFECTIVE, CAP_SETUID, CAP_SETGID, -1) < 0)
+    {
       throw std::system_error(
-            errno,
-            std::system_category(),
-            "capng_updatev(.., CAPNG_EFFECTIVE)");
+	errno,
+	std::system_category(),
+	"capng_updatev(.., CAPNG_EFFECTIVE)");
+    }
 
     if (capng_updatev(CAPNG_ADD, CAPNG_PERMITTED, CAP_SETUID, CAP_SETGID, -1) < 0)
+    {
       throw std::system_error(
-            errno,
-            std::system_category(),
-            "capng_updatev(.., CAPNG_PERMITTED)");
+	errno,
+	std::system_category(),
+	"capng_updatev(.., CAPNG_PERMITTED)");
+    }
 
     if (capng_apply(CAPNG_SELECT_BOTH) < 0)
+    {
       throw std::system_error(
-            errno,
-            std::system_category(),
-            "capng_apply(CAPNG_SELECT_BOTH)");
+	errno,
+	std::system_category(),
+	"capng_apply(CAPNG_SELECT_BOTH)");
+    }
   }
   catch (const std::system_error& ec)
   {
     if (__f_req_syslog)
+    {
       ::syslog(LOG_ERR, "%s", ec.what());
+    }
 
     capng_clear(CAPNG_SELECT_BOTH);
   }
 
-  if (__f_req_syslog)
+  if (__f_req_syslog && __f_trace)
+  {
     ::syslog(LOG_DEBUG, "Capabilities set.");
+  }
 }
 
 // Credentials
@@ -577,9 +613,11 @@ process::__set_credentials()
   if (!__f_req_user_change)
   {
     if (__f_req_syslog)
+    {
       ::syslog(
-          LOG_INFO,
-          "User switch disabled!");
+	LOG_INFO,
+	"User switch disabled!");
+    }
 
     return;
   }
@@ -589,26 +627,28 @@ process::__set_credentials()
   const gid_t egid    = getegid();
   std::string egroup  = credentials::group_id_to_name(egid);
 
-  if (__f_req_syslog)
+  if (__f_req_syslog && __f_trace)
   {
     ::syslog(
-        LOG_DEBUG,
-        "Switch user EUID: %s(%d), UID: %s(%d), EGID: %s(%d), GID: %s(%d).",
-        _user.c_str(),    _uid,
-        euser.c_str(),    euid,
-        _group.c_str(),   _gid,
-        egroup.c_str(),   egid);
+      LOG_DEBUG,
+      "Switch user EUID: %s(%d), UID: %s(%d), EGID: %s(%d), GID: %s(%d).",
+      _user.c_str(),    _uid,
+      euser.c_str(),    euid,
+      _group.c_str(),   _gid,
+      egroup.c_str(),   egid);
   }
 
   // Same uid
   if (_uid == euid)
   {
     if (__f_req_syslog)
+    {
       ::syslog(
-          LOG_INFO,
-          "Trying to switch to the same user. Credentials are kept as is.");
+        LOG_INFO,
+        "Trying to switch to the same user. Credentials are kept as is.");
+    }
 
-      return;
+    return;
   }
 
   // No enough credentials
@@ -616,44 +656,54 @@ process::__set_credentials()
         !capng_have_capability(CAPNG_EFFECTIVE, CAP_SETUID))
   {
     if (__f_req_syslog)
+    {
       ::syslog(
-          LOG_INFO,
-          "Not enough credentials to switch to user \"%s\" and group \"%s\"",
-          _user.c_str(),
-          _group.c_str());
+	LOG_INFO,
+	"Not enough credentials to switch to user \"%s\" and group \"%s\"",
+	_user.c_str(),
+	_group.c_str());
+    }
 
     return;
   }
 
   // Retain privilleges over the uid/gid switch using Linux capabilities
-    if (capng_have_capability(CAPNG_EFFECTIVE, CAP_SETUID))
+  if (capng_have_capability(CAPNG_EFFECTIVE, CAP_SETUID))
   {
     try
     {
       capng_clear(CAPNG_SELECT_BOTH);
 
       if (capng_updatev(CAPNG_ADD, CAPNG_EFFECTIVE, CAP_SETUID, CAP_SETGID, -1))
+      {
         throw std::system_error(
             errno,
             std::system_category(),
             "capng_updatev(.., CAPNG_EFFECTIVE)");
+      }
 
       if (capng_updatev(CAPNG_ADD, CAPNG_PERMITTED, CAP_SETUID, CAP_SETGID, -1) < 0)
+      {
         throw std::system_error(
             errno,
             std::system_category(),
             "capng_updatev(.., CAPNG_PERMITTED)");
+      }
 
       if (capng_change_id(_uid, _gid, CAPNG_DROP_SUPP_GRP))
+      {
         throw std::system_error(
             errno,
             std::system_category(),
             "capng_change_id(.., CAPNG_DROP_SUPP_GRP)");
+      }
     }
     catch (const std::system_error& ec)
     {
-      if (__f_req_syslog)
+      if (__f_req_syslog && __f_trace)
+      {
         ::syslog(LOG_ERR, "%s", ec.what());
+      }
 
       capng_clear(CAPNG_SELECT_BOTH);
 
@@ -664,27 +714,33 @@ process::__set_credentials()
 
     errno = 0;
     if (::initgroups(_user.c_str(), _gid) < 0)
+    {
       throw std::system_error(
           errno,
           std::system_category(),
           "initgroups()");
+    }
 
-    if (__f_req_syslog)
+    if (__f_req_syslog && __f_trace)
+    {
       ::syslog(
           LOG_INFO,
           "Initializing all groups for the user %s",
           _user.c_str());
+    }
 
 #endif
 
-    if (__f_req_syslog)
+    if (__f_req_syslog && __f_trace)
+    {
       ::syslog(
-          LOG_INFO,
-          "User/ID: %s (%d), effective user/UID: %s (%d), group/ID: %s (%d), effective group/ID: %s (%d)",
-          _user.c_str(),    _uid,
-          euser.c_str(),    euid,
-          _group.c_str(),   _gid,
-          egroup.c_str(),   egid);
+        LOG_INFO,
+        "User/ID: %s (%d), effective user/UID: %s (%d), group/ID: %s (%d), effective group/ID: %s (%d)",
+        _user.c_str(),	_uid,
+        euser.c_str(),	euid,
+        _group.c_str(),	_gid,
+        egroup.c_str(),	egid);
+    }
   }
 
   // Traditional setup
@@ -696,30 +752,42 @@ process::__set_credentials()
       errno = 0;
 
       if (0 > setgid(_gid))
+      {
         throw std::system_error(errno, std::system_category(), "setgid()");
+      }
 
-      if (__f_req_syslog)
+      if (__f_req_syslog && __f_trace)
+      {
         ::syslog(LOG_INFO, "Setting up group/ID: %s (%d)", _group.c_str(), _gid);
+      }
 
 #if HAVE_INITGROUPS
 
       errno = 0;
 
       if (0 > ::initgroups(_user.c_str(), _gid))
+      {
         throw std::system_error(errno, std::system_category(), "initgroups()");
+      }
 
-      if (__f_req_syslog)
+      if (__f_req_syslog && __f_trace)
+      {
         ::syslog(LOG_INFO, "Initializing all groups for the user %s", _user.c_str());
+      }
 
 #endif
 
       errno = 0;
 
       if (0 > setegid(_gid))
+      {
         throw std::system_error(errno, std::system_category(), "setegid()");
+      }
 
-      if (__f_req_syslog)
+      if (__f_req_syslog && __f_trace)
+      {
         ::syslog(LOG_INFO, "Setting up effective group/ID: %s (%d)", _group.c_str(), _gid);
+      }
     }
 
     // Setting user and effective user
@@ -728,18 +796,26 @@ process::__set_credentials()
       errno = 0;
 
       if (0 > setuid(_uid))
+      {
         throw std::system_error(errno,  std::system_category(), "setuid()");
+      }
 
-      if (__f_req_syslog)
+      if (__f_req_syslog && __f_trace)
+      {
         ::syslog(LOG_INFO, "Setting up user/ID: %s (%d)", _user.c_str(), _uid);
+      }
 
       errno = 0;
 
       if (0 > seteuid(_uid))
+      {
         throw std::system_error(errno, std::system_category(), "seteuid()");
+      }
 
       if (__f_req_syslog)
+      {
         ::syslog(LOG_INFO, "Setting up effective user/ID: %s (%d)", _user.c_str(), _uid);
+      }
     }
   }
 
@@ -755,12 +831,16 @@ process::__set_credentials()
     std::memset(__buffer, 0, __size);
 
     if (getpwuid_r(_uid, &p, __buffer, __size, &pw))
+    {
       throw std::system_error(errno, std::system_category(), "getpwuid_r()");
+    }
 
 #else
 
     if ((pw = getpwuid(_uid)) == NULL)
+    {
       throw std::system_error(errno, std::system_category(), "getpwuid()");
+    }
 
 #endif
 
@@ -770,10 +850,12 @@ process::__set_credentials()
   }
 
   // Done
-  if (__f_req_syslog)
+  if (__f_req_syslog && __f_trace)
+  {
     ::syslog(
         LOG_DEBUG,
         "Successfully retaining privilleges over UID switch");
+  }
 }
 
 // Change working directory
@@ -875,7 +957,7 @@ process::__detach_terminal()
 
     // Duplicate
     errno = 0;
-    if (::dup2(the_null_fd, the_fd) < 0)
+    if (0 > ::dup2(the_null_fd, the_fd) < 0)
     {
       std::error_code ec(errno, std::system_category());
       std::string msg("Failed to duplicate descriptor ");
@@ -895,24 +977,32 @@ process::__detach_terminal()
   // Close all open file descriptors other than stdin, stdout, stderr
   int descriptor_count = ::getdtablesize();
   for (int i = 3; i < descriptor_count; ++i)
+  {
     ::close(i);
+  }
 }
 
 void
 process::__in_between()
 {
   // Setting mask
-  if (__f_req_syslog)
+  if (__f_req_syslog && __f_trace)
+  {
     ::syslog(LOG_INFO, "Setting mask 0077");
+  }
 
   ::umask(0077);
 
   // Make sure we have a relatively sane environment
-  if (getenv("IFS") == NULL)
+  if (NULL == getenv("IFS"))
+  {
     setenv("IFS", " \t\n", 1);
+  }
 
-  if (getenv("PATH") == NULL)
+  if (NULL == getenv("PATH"))
+  {
     setenv("PATH","/usr/local/sbin:/sbin:/bin:/usr/sbin:/usr/bin", 1);
+  }
 }
 
 void
@@ -921,22 +1011,26 @@ process::__write_pid()
   if (!__f_req_pid_file || _pid_path.empty())
   {
     if (__f_req_syslog)
+    {
       ::syslog(
-	LOG_ALERT,
+	LOG_WARNING,
 	"PID file not set. Bypassing ...");
+    }
 
     return;
   }
 
-  if (__f_req_syslog)
+  if (__f_req_syslog && __f_trace)
+  {
     ::syslog(
 	LOG_INFO,
 	"Writing PID to %s ...",
 	_pid_path.c_str());
+  }
 
   // Writing
-  FILE* f = nullptr;
-  if (nullptr == (f = ::fopen (_pid_path.c_str(), "w")))
+  FILE* f = NULL;
+  if (NULL == (f = ::fopen (_pid_path.c_str(), "w")))
   {
     std::error_code ec(errno, std::system_category());
     std::string msg("fopen(");
@@ -944,24 +1038,23 @@ process::__write_pid()
     msg.append(", w) failed");
 
     if (__f_req_syslog)
-      ::syslog(
-	LOG_ERR,
-	"%s: %s, %d",
-	msg.c_str(),
-	ec.message().c_str(),
-	ec.value());
+    {
+      ::syslog(LOG_ERR, "%s: %s, %d", msg.c_str(), ec.message().c_str(), ec.value());
+    }
 
     throw std::system_error(ec, msg);
   }
 
   // Write PID
-  if (::fprintf(f, "%d", getpid()) < 0)
+  if (0 > ::fprintf(f, "%d", getpid()))
   {
     std::error_code ec(errno, std::system_category());
     std::string msg("fprintf() failed");
 
     if (__f_req_syslog)
+    {
       ::syslog(LOG_ERR, "%s: %s, %d", msg.c_str(), ec.message().c_str(), ec.value());
+    }
 
     throw std::system_error(ec, msg);
   }
@@ -985,10 +1078,9 @@ process::exists(
   DIR* __process_dir = ::opendir("/proc");
 
   if (!__process_dir)
-    throw std::system_error(
-      errno,
-      std::system_category(),
-      "Failed to open /proc");
+  {
+    throw std::system_error(errno, std::system_category(), "Failed to open /proc");
+  }
 
   const pid_t self_pid = getpid();
 
@@ -1044,10 +1136,9 @@ process::exists(
   DIR* __process_dir = ::opendir("/proc");
 
   if (!__process_dir)
-    throw std::system_error(
-      errno,
-      std::system_category(),
-      "Failed to open /proc");
+  {
+    throw std::system_error(errno, std::system_category(), "Failed to open /proc");
+  }
 
   // Iterate the /proc/<pid>
   bool __is_matched = false;

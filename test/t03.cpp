@@ -134,7 +134,10 @@ want to. Cheers!",
       if (!__false_start)
       {
         test::daemon the_console(argv[0]);
+	the_console.enable(egg::process::property::trace);
 	the_console.enable(egg::process::property::daemon);
+	the_console.set(egg::process::property::user, "daemon");
+	the_console.set(egg::process::property::group, "daemon");
         the_console.execute();
       }
     }

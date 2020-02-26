@@ -31,6 +31,7 @@ public:
    **********************************************/
   enum class property : std::uint32_t
   {
+    trace,
     description,
     daemon,
     user,
@@ -115,6 +116,7 @@ protected:
 private:
 
   // Flags
+  std::uint32_t			__f_trace		: 1;
   std::uint32_t			__f_is_daemon		: 1;
   std::uint32_t			__f_req_user_change	: 1;
   std::uint32_t			__f_req_group_change	: 1;
@@ -123,7 +125,7 @@ private:
   std::uint32_t			__f_req_syslog		: 1;
   std::uint32_t			__f_req_cgroup		: 1;
   std::uint32_t			__f_switch_complete	: 1;
-  std::uint32_t			__f_unused		: 24;
+  std::uint32_t			__f_unused		: 23;
 
   // Program name
   std::string                   _name;

@@ -185,7 +185,7 @@ credentials::group_id_to_name(
 
 #endif
 
-  if (_group == NULL)
+  if (NULL == _group)
   {
     throw std::system_error(
             std::make_error_code(std::errc::invalid_argument),
@@ -235,7 +235,7 @@ credentials::name_to_group_id(
 
 #endif
 
-  if (_group == NULL)
+  if (NULL == _group)
   {
     throw std::system_error(
             std::make_error_code(std::errc::invalid_argument),
@@ -252,7 +252,7 @@ credentials::working_directory()
   std::size_t size = 1024;
   char* buffer = new char[size];
 
-  while (getcwd(buffer, size) == NULL)
+  while (NULL == getcwd(buffer, size))
   {
     std::error_code ec(errno, std::system_category());
     if (ec == std::errc::result_out_of_range)
