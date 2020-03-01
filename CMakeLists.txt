@@ -31,7 +31,7 @@ SET ( ABIVersion        ${ABIMajor}.${ABIMinor}.${ABIPatch}             )
 SET ( LibraryName	"egg-runner"
       CACHE STRING	"Runner library ${PROJECT_VERSION}. ABI: ${ABIVersion}" FORCE )
 
-SET ( Alias		"Go cat go"                                     )
+SET ( Alias		"Go cat go"					)
 SET ( Author		"Vladislav \\\"Tanuki\\\" Mikhailikov"		)
 SET ( Copyright		"GNU GPLv3"					)
 SET ( Description	"Egg (Linux Daemon SDK) runner library"		)
